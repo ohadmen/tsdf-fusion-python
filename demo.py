@@ -2,12 +2,12 @@
 """
 
 import time
-import pyzview
 import cv2
 import numpy as np
-
+from pyzview import Pyzview
+import pyrealsense2
 import fusion
-
+from cam_pose_estimator import CamPoseEstimator
 
 if __name__ == "__main__":
   # ======================================================================================================== #
@@ -18,26 +18,16 @@ if __name__ == "__main__":
   print("Estimating voxel volume bounds...")
   n_imgs = 1000
   cam_intr = np.loadtxt("data/camera-intrinsics.txt", delimiter=' ')
-  vol_bnds = np.zeros((3,2))
-  for i in range(n_imgs):
-    # Read depth image and camera pose
-    depth_im = cv2.imread("data/frame-%06d.depth.png"%(i),-1).astype(float)
-    depth_im /= 1000.  # depth is saved in 16-bit PNG in millimeters
-    depth_im[depth_im == 65.535] = 0  # set invalid depth to 0 (specific to 7-scenes dataset)
-    cam_pose = np.loadtxt("data/frame-%06d.pose.txt"%(i))  # 4x4 rigid transformation matrix
-
-    # Compute camera view frustum and extend convex hull
-    view_frust_pts = fusion.get_view_frustum(depth_im, cam_intr, cam_pose)
-    vol_bnds[:,0] = np.minimum(vol_bnds[:,0], np.amin(view_frust_pts, axis=1))
-    vol_bnds[:,1] = np.maximum(vol_bnds[:,1], np.amax(view_frust_pts, axis=1))
+  vol_bnds = np.array([[-5,5],[-3,3],[0,6]])
   # ======================================================================================================== #
-
+  depth_im = cv2.imread("data/frame-%06d.depth.png" % (0), -1).astype(float)
+  pose = CamPoseEstimator(cam_intr,depth_im.shape)
   # ======================================================================================================== #
   # Integrate
   # ======================================================================================================== #
   # Initialize voxel volume
   print("Initializing voxel volume...")
-  tsdf_vol = fusion.TSDFVolume(vol_bnds, voxel_size=0.01)
+  tsdf_vol = fusion.TSDFVolume(vol_bnds, voxel_size=0.02)
 
   # Loop through RGB-D images and fuse them together
   t0_elapse = time.time()
@@ -49,7 +39,16 @@ if __name__ == "__main__":
     depth_im = cv2.imread("data/frame-%06d.depth.png"%(i),-1).astype(float)
     depth_im /= 1000.
     depth_im[depth_im == 65.535] = 0
-    cam_pose = np.loadtxt("data/frame-%06d.pose.txt"%(i))
+    if i==0:
+      verts=[]
+      norms=[]
+    else:
+      verts, faces, norms, colors = tsdf_vol.get_mesh()
+      Pyzview().remove_shape("reconstruct")
+      Pyzview().add_trimesh("reconstruct", verts, faces.copy(), colors.copy())
+
+    cam_pose =pose.estimate(depth_im,verts,norms)
+    # cam_pose = np.loadtxt("data/frame-%06d.pose.txt"%(i))
 
     # Integrate observation into voxel volume (assume color aligned with depth)
     tsdf_vol.integrate(color_image, depth_im, cam_intr, cam_pose, obs_weight=1.)
@@ -57,9 +56,7 @@ if __name__ == "__main__":
 
   fps = n_imgs / (time.time() - t0_elapse)
   print("Average FPS: {:.2f}".format(fps))
-  verts, faces, norms, colors = tsdf_vol.get_mesh()
-  pyzview.Pyzview().remove_shape("reconstruct")
-  pyzview.Pyzview().add_trimesh("reconstruct", verts, faces.copy(), colors.copy())
+
   # Get mesh from voxel volume and save to disk (can be viewed with Meshlab)
   print("Saving mesh to mesh.ply...")
 
