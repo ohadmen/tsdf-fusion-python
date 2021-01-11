@@ -12,9 +12,9 @@ class CamPoseEstimator:
         ircp_params = pyircp.ICPParams()
         ircp_params.maxIterations = 20
         ircp_params.maxNonIncreaseIterations = 3
-        ircp_params.maxMatchingDistance = 0.5
+        ircp_params.maxMatchingDistance = 0.2
         ircp_params.ransacIterations = 1000
-        ircp_params.ransacMaxInlierDistance = 0.02
+        ircp_params.ransacMaxInlierDistance = 0.01
         ircp_params.seed = 0
         self.icp = pyircp.ICP(ircp_params)
 
